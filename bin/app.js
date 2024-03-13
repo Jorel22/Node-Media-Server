@@ -1,6 +1,10 @@
-#!/usr/bin/env node 
+#!/usr/bin/env node
 
 const NodeMediaServer = require('..');
+const AWS = require('aws-sdk');
+const s3 = new AWS.S3();
+const path = require('path');
+const fs = require('fs');
 let argv = require('minimist')(process.argv.slice(2),
   {
     string:['rtmp_port','http_port','https_port'],
@@ -15,7 +19,7 @@ let argv = require('minimist')(process.argv.slice(2),
       'https_port': 8443,
     }
   });
-  
+
 if (argv.help) {
   console.log('Usage:');
   console.log('  node-media-server --help // print help information');
@@ -25,18 +29,16 @@ if (argv.help) {
   process.exit(0);
 }
 
+let  recorded_flag= false;
+var bucket   = process.env.BUCKEt;
+
 const config = {
   rtmp: {
-    port: argv.rtmp_port,
+    port: 1935,
     chunk_size: 60000,
     gop_cache: true,
     ping: 30,
-    ping_timeout: 60,
-    // ssl: {
-    //   port: 443,
-    //   key: __dirname+'/privatekey.pem',
-    //   cert: __dirname+'/certificate.pem',
-    // }
+    ping_timeout: 60
   },
   http: {
     port: argv.http_port,
@@ -57,9 +59,50 @@ const config = {
     play: false,
     publish: false,
     secret: 'nodemedia2017privatekey'
+  },
+  trans: {
+    ffmpeg: '/usr/bin/ffmpeg',
+    tasks: [
+      {
+        app: 'live',
+        mp4: true,
+        mp4Flags: '[movflags=frag_keyframe+empty_moov]',
+      }
+    ]
   }
 };
 
+
+function getFilesInFolder(folderPath) {
+  try {
+    // Read the contents of the folder synchronously
+    const files = fs.readdirSync(folderPath);
+    return files;
+  } catch (error) {
+    console.error('Error reading folder:', error);
+    return [];
+  }
+}
+
+function uploadFileToS3(bucketName, fileKey, filePath) {
+  const fileStream = fs.createReadStream(filePath);
+
+  const params = {
+    Bucket: bucketName,
+    Key: fileKey,
+    Body: fileStream
+  };
+
+  return new Promise((resolve, reject) => {
+    s3.upload(params, (err, data) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(data);
+      }
+    });
+  });
+}
 
 let nms = new NodeMediaServer(config);
 nms.run();
@@ -75,7 +118,28 @@ nms.on('postConnect', (id, args) => {
 });
 
 nms.on('doneConnect', (id, args) => {
-  console.log('[NodeEvent on doneConnect]', `id=${id} args=${JSON.stringify(args)}`);
+  console.log('[NodeEvent on doneConnect]', `id=${id}  args=${JSON.stringify(args)}`);
+
+  //stream_path = args["streamPath"];
+  files_path = "/home/ubuntu/Node-Media-Server/bin/media/live/zoom";
+  //file_name =  files[0];
+  //files_path = parent_path + stream_path;
+  console.log(files_path)
+
+  const files = getFilesInFolder(files_path);
+
+  console.log(files[0])
+
+  if (!recorded_flag){
+    uploadFileToS3(bucket, files[0], path.join(files_path,files[0]))
+    .then(data => {
+      console.log('File uploaded successfully:', data);
+      recorded_flag=true;
+    })
+    .catch(err => {
+      console.error('Error uploading file:', err);
+    });
+  }
 });
 
 nms.on('prePublish', (id, StreamPath, args) => {
@@ -105,4 +169,3 @@ nms.on('postPlay', (id, StreamPath, args) => {
 nms.on('donePlay', (id, StreamPath, args) => {
   console.log('[NodeEvent on donePlay]', `id=${id} StreamPath=${StreamPath} args=${JSON.stringify(args)}`);
 });
-
