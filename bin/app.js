@@ -30,7 +30,7 @@ if (argv.help) {
 }
 
 let  recorded_flag= false;
-var bucket   = process.env.BUCKEt;
+var bucket   = process.env.BUCKET;
 
 const config = {
   rtmp: {
@@ -47,11 +47,11 @@ const config = {
     allow_origin: '*',
     api: true
   },
-  https: {
-    port: argv.https_port,
-    key: __dirname+'/privatekey.pem',
-    cert: __dirname+'/certificate.pem',
-  },
+  // https: {
+  //   port: argv.https_port,
+  //   key: __dirname+'/privatekey.pem',
+  //   cert: __dirname+'/certificate.pem',
+  // },
   auth: {
     api: true,
     api_user: 'admin',
