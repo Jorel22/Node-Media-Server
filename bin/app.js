@@ -5,6 +5,7 @@ const AWS = require('aws-sdk');
 const s3 = new AWS.S3();
 const path = require('path');
 const fs = require('fs');
+const ffmpeg = require('fluent-ffmpeg');
 let argv = require('minimist')(process.argv.slice(2),
   {
     string:['rtmp_port','http_port','https_port'],
@@ -29,8 +30,10 @@ if (argv.help) {
   process.exit(0);
 }
 
-let  recorded_flag= false;
-var bucket   = process.env.BUCKET;
+let  uploaded_mp4_flag= false;
+let  uploaded_mp3_flag= false;
+let mp4_bucket   = process.env.MP4_BUCKET;
+let mp3_bucket   = process.env.MP3_BUCKET;
 
 const config = {
   rtmp: {
@@ -126,20 +129,43 @@ nms.on('doneConnect', (id, args) => {
   //files_path = parent_path + stream_path;
   console.log(files_path)
 
-  const files = getFilesInFolder(files_path);
+  const mp4_file = getFilesInFolder(files_path)[0];
 
-  console.log(files[0])
-
-  if (!recorded_flag){
-    uploadFileToS3(bucket, files[0], path.join(files_path,files[0]))
+  if (!uploaded_mp4_flag){
+    uploadFileToS3(mp4_bucket, mp4_file, path.join(files_path,mp4_file))
     .then(data => {
       console.log('File uploaded successfully:', data);
-      recorded_flag=true;
+      uploaded_mp4_flag=true;
     })
     .catch(err => {
       console.error('Error uploading file:', err);
     });
   }
+
+  const input_file = path.join(files_path,mp4_file);
+  const output_file = path.join(files_path,`${path.parse(mp4_file).name}.mp3`);
+  ffmpeg(input_file)
+  .toFormat('mp3')
+  .outputOptions('-q:a 0') // Set audio quality (0 is the highest quality)
+  .on('end', () => {
+    console.log('Conversion finished');
+  })
+  .on('error', (err) => {
+    console.error('Error during conversion:', err);
+  })
+  .save(output_file);
+
+  if (!uploaded_mp3_flag){
+  uploadFileToS3(mp3_bucket, `${path.parse(mp4_file).name}.mp3`, output_file)
+    .then(data => {
+      console.log('File uploaded successfully:', data);
+      uploaded_mp3_flag=true;
+    })
+    .catch(err => {
+      console.error('Error uploading file:', err);
+    });
+  }
+    
 });
 
 nms.on('prePublish', (id, StreamPath, args) => {
